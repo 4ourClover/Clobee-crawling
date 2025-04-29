@@ -162,21 +162,24 @@ next_brand_id = max(brand_mapping.values()) + 1
 
 card_type = 401
 
-# 현재 DB 카드 이름 읽기
-cursor.execute('SELECT card_name FROM card_info')
-db_card_names = set(row[0] for row in cursor.fetchall())
+# DB에 있는 (card_name, card_type) 가져오기
+cursor.execute('SELECT card_name, card_type FROM card_info')
+db_cards = set((row[0], row[1]) for row in cursor.fetchall())
 
-# 새로 크롤링한 카드 이름
-new_card_names = set(card['name'] for card in credit_cards)
+# 크롤링한 (card_name, card_type)
+new_cards = set((card['name'], card_type) for card in credit_cards)
 
-# 삭제 대상 (DB에는 있는데 새로 크롤링에는 없는 카드)
-cards_to_delete = db_card_names - new_card_names
-for card_name in cards_to_delete:
-    cursor.execute('DELETE FROM card_info WHERE card_name = %s', (card_name,))
+# 삭제할 카드 (DB에는 있는데 크롤링한 데이터에는 없는 경우)
+cards_to_delete = db_cards - new_cards
+for card_name, card_type_value in cards_to_delete:
+    if card_type_value == card_type:  # 현재 실행 중인 카드 타입(401)만 삭제
+        cursor.execute('DELETE FROM card_info WHERE card_name = %s AND card_type = %s', (card_name, card_type_value))
 
 # 카드 삽입/업데이트
-for card in credit_cards:
+for idx, card in enumerate(credit_cards, start=1):
     now = datetime.now()
+
+    # 등록되지 않은 카드 회사 확인 및 등록
     brand_id = brand_mapping.get(card['corp'])
     if brand_id is None:
         brand_id = next_brand_id
@@ -184,15 +187,15 @@ for card in credit_cards:
         next_brand_id += 1
         print(f"새로운 브랜드 등록: {card['corp']} → {brand_id}")
 
-    if card['name'] in db_card_names:
-        # UPDATE (rank 수정)
+    if (card['name'], card_type) in db_cards:
+        # 업데이트
         cursor.execute('''
             UPDATE card_info
             SET card_rank = %s, updated_at = %s
-            WHERE card_name = %s
-        ''', (card['rank'], now, card['name']))
+            WHERE card_name = %s AND card_type = %s
+        ''', (idx, now, card['name'], card_type))
     else:
-        # INSERT
+        # 삽입
         cursor.execute('''
             INSERT INTO card_info (
                 card_name, card_brand, card_domestic_annual_fee, card_expiry_date,
@@ -211,7 +214,7 @@ for card in credit_cards:
             now,
             now,
             card['international_fee'],
-            card['rank']
+            idx
         ))
 
 conn.commit()
