@@ -1,0 +1,7 @@
+.env
+
+# 파이썬 가상환경 -> requirements.txt에 저장함
+/selenium-env
+
+# chromeDriver 폴더
+/chromedriver-mac
