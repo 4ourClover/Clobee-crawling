@@ -9,216 +9,162 @@ import os
 from datetime import datetime
 import time
 
-# .env 파일 로드
-load_dotenv()
+from brand_mapping import brand_mapping
 
-# DB 환경변수 가져오기
-DB_HOST = os.getenv('DB_HOST')
-DB_PORT = os.getenv('DB_PORT')
-DB_NAME = os.getenv('DB_NAME')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
+def run_credit_cards_crawler():
+    # .env 파일 로드
+    load_dotenv()
 
-# ChromeDriver 경로 설정
-service = Service(executable_path="C:/02.devEnv/chromedriver-win64/chromedriver.exe")
-driver = webdriver.Chrome(service=service)
+    # DB 환경변수 가져오기
+    DB_HOST = os.getenv('DB_HOST')
+    DB_PORT = os.getenv('DB_PORT')
+    DB_NAME = os.getenv('DB_NAME')
+    DB_USER = os.getenv('DB_USER')
+    DB_PASSWORD = os.getenv('DB_PASSWORD')
 
-# 사이트 접속
-driver.get('https://www.card-gorilla.com/card?cate=CRD')
+    # ChromeDriver 경로 설정
+    service = Service(executable_path="C:/02.devEnv/chromedriver-win64/chromedriver.exe")
+    driver = webdriver.Chrome(service=service)
 
-# 명시적 대기
-wait = WebDriverWait(driver, 10)
-wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list')))
+    # 사이트 접속
+    driver.get('https://www.card-gorilla.com/card?cate=CRD')
 
-# 카드 더보기 버튼 계속 누르기
-while True:
-    try:
-        more_button = driver.find_element(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > div.ftr > a.lst_more')
-        if more_button.is_displayed():
-            driver.execute_script("arguments[0].click();", more_button)
-            time.sleep(1)
-        else:
-            print("--- 모든 카드 로딩 완료 (버튼 안보임) ---")
+    # 명시적 대기
+    wait = WebDriverWait(driver, 10)
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list')))
+
+    # 카드 더보기 버튼 계속 누르기
+    while True:
+        try:
+            more_button = driver.find_element(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > div.ftr > a.lst_more')
+            if more_button.is_displayed():
+                driver.execute_script("arguments[0].click();", more_button)
+                time.sleep(1)
+            else:
+                print("--- 모든 카드 로딩 완료 (버튼 안보임) ---")
+                break
+        except:
+            print("--- 모든 카드 로딩 완료 (버튼 없음) ---")
             break
-    except:
-        print("--- 모든 카드 로딩 완료 (버튼 없음) ---")
-        break
 
-# 모든 카드 요소 찾기
-card_elements = driver.find_elements(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > ul > li')
-print(f"총 카드 수: {len(card_elements)}개")
+    # 모든 카드 요소 찾기
+    card_elements = driver.find_elements(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > ul > li')
+    print(f"총 카드 수: {len(card_elements)}개")
 
-# 카드 데이터 추출
-credit_cards = []
-for i in range(1, len(card_elements) + 1):
-    try:
-        img = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_img > p > img').get_attribute('src')
-        name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
-        corp = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_corp').text.strip()
+    # 카드 데이터 추출
+    credit_cards = []
+    for i in range(1, len(card_elements) + 1):
+        try:
+            img = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_img > p > img').get_attribute('src')
+            name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
+            corp = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_corp').text.strip()
 
-        # 연회비 초기값 None
-        domestic_fee = None
-        international_fee = None
+            # 연회비 초기값 None
+            domestic_fee = None
+            international_fee = None
 
-        fee_spans = driver.find_elements(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.ex > p.in_for > span')
-        
-        for span in fee_spans:
-            text = span.text.strip()
-            if '국내전용' in text:
-                if '없음' in text:
-                    domestic_fee = 0
-                else:
-                    fee = text.replace('국내전용', '').replace('원', '').replace(',', '').strip()
-                    domestic_fee = int(fee) if fee.isdigit() else 0
-            elif '해외겸용' in text:
-                if '없음' in text:
-                    international_fee = 0
-                else:
-                    fee = text.replace('해외겸용', '').replace('원', '').replace(',', '').strip()
-                    international_fee = int(fee) if fee.isdigit() else 0
+            fee_spans = driver.find_elements(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.ex > p.in_for > span')
+            
+            for span in fee_spans:
+                text = span.text.strip()
+                if '국내전용' in text:
+                    if '없음' in text:
+                        domestic_fee = 0
+                    else:
+                        fee = text.replace('국내전용', '').replace('원', '').replace(',', '').strip()
+                        domestic_fee = int(fee) if fee.isdigit() else 0
+                elif '해외겸용' in text:
+                    if '없음' in text:
+                        international_fee = 0
+                    else:
+                        fee = text.replace('해외겸용', '').replace('원', '').replace(',', '').strip()
+                        international_fee = int(fee) if fee.isdigit() else 0
 
-        credit_cards.append({
-            'rank': i, 
-            'name': name,
-            'corp': corp,
-            'image_url': img,
-            'domestic_fee': domestic_fee,
-            'international_fee': international_fee
-        })
-    except Exception as e:
-        print(f"{i}번 카드 크롤링 실패: {e}")
-        continue
+            credit_cards.append({
+                'rank': i, 
+                'name': name,
+                'corp': corp,
+                'image_url': img,
+                'domestic_fee': domestic_fee,
+                'international_fee': international_fee
+            })
+        except Exception as e:
+            print(f"{i}번 카드 크롤링 실패: {e}")
+            continue
 
-driver.quit()
+    driver.quit()
 
-# PostgreSQL 연결
-conn = psycopg2.connect(
-    host=DB_HOST,
-    port=DB_PORT,
-    dbname=DB_NAME,
-    user=DB_USER,
-    password=DB_PASSWORD
-)
-cursor = conn.cursor()
+    # PostgreSQL 연결
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+    cursor = conn.cursor()
 
-# 브랜드 매핑
-brand_mapping = {
-    '우리카드': 301,
-    '신한카드': 302,
-    'IBK기업은행': 303,
-    'KB국민카드': 304,
-    '하나카드': 305,
-    '삼성카드': 306,
-    '현대카드': 307,
-    '롯데카드': 308,
-    'NH농협카드': 309,
-    'BC 바로카드': 310,
-    '씨티카드': 311,
-    'KG모빌리언스': 312,
-    'MG새마을금고': 313,
-    '우체국': 314,
-    '카카오뱅크': 315,
-    '케이뱅크': 316,
-    '카카오페이': 317,
-    '네이버페이': 318,
-    '토스페이': 319,
-    '토스뱅크': 320,
-    '현대백화점': 321,
-    '광주은행': 322,
-    '신협': 323,
-    '제주은행': 324,
-    'BNK부산은행': 325,
-    'BNK경남은행': 326,
-    'Sh수협은행': 327,
-    'SSGPAY. CARD': 328,
-    'iM뱅크': 329,
-    '전북은행': 330,
-    'SC제일은행': 331,
-    '차이': 332,
-    '엔에이치엔페이코': 333,
-    'KB증권': 334,
-    '미래에셋증권': 335,
-    '코나카드': 336,
-    '트래블월렛': 337,
-    'KDB산업은행': 338,
-    '한국투자증권': 339,
-    '한패스': 340,
-    'DB금융투자': 341,
-    'NH투자증권': 342,
-    'SBI저축은행': 343,
-    '유안타증권': 344,
-    '유진투자증권': 345,
-    '토스': 346,
-    '핀크카드': 347,
-    'SK증권': 348,
-    '다날': 349,
-    '머니트리': 350,
-    '교보증권': 351,
-    '아이오로라': 352,
-    '핀트': 353
-}
+    next_brand_id = max(brand_mapping.values()) + 1
 
-next_brand_id = max(brand_mapping.values()) + 1
+    card_type = 401
 
-card_type = 401
+    # DB에 있는 (card_name, card_type) 가져오기
+    cursor.execute('SELECT card_name, card_type FROM card_info')
+    db_cards = set((row[0], row[1]) for row in cursor.fetchall())
 
-# DB에 있는 (card_name, card_type) 가져오기
-cursor.execute('SELECT card_name, card_type FROM card_info')
-db_cards = set((row[0], row[1]) for row in cursor.fetchall())
+    # 크롤링한 (card_name, card_type)
+    new_cards = set((card['name'], card_type) for card in credit_cards)
 
-# 크롤링한 (card_name, card_type)
-new_cards = set((card['name'], card_type) for card in credit_cards)
+    # 삭제할 카드 (DB에는 있는데 크롤링한 데이터에는 없는 경우)
+    cards_to_delete = db_cards - new_cards
+    for card_name, card_type_value in cards_to_delete:
+        if card_type_value == card_type:  # 현재 실행 중인 카드 타입(401)만 삭제
+            cursor.execute('DELETE FROM card_info WHERE card_name = %s AND card_type = %s', (card_name, card_type_value))
 
-# 삭제할 카드 (DB에는 있는데 크롤링한 데이터에는 없는 경우)
-cards_to_delete = db_cards - new_cards
-for card_name, card_type_value in cards_to_delete:
-    if card_type_value == card_type:  # 현재 실행 중인 카드 타입(401)만 삭제
-        cursor.execute('DELETE FROM card_info WHERE card_name = %s AND card_type = %s', (card_name, card_type_value))
+    # 카드 삽입/업데이트
+    for idx, card in enumerate(credit_cards, start=1):
+        now = datetime.now()
 
-# 카드 삽입/업데이트
-for idx, card in enumerate(credit_cards, start=1):
-    now = datetime.now()
+        # 등록되지 않은 카드 회사 확인 및 등록
+        brand_id = brand_mapping.get(card['corp'])
+        if brand_id is None:
+            brand_id = next_brand_id
+            brand_mapping[card['corp']] = brand_id
+            next_brand_id += 1
+            print(f"새로운 브랜드 등록: {card['corp']} → {brand_id}")
 
-    # 등록되지 않은 카드 회사 확인 및 등록
-    brand_id = brand_mapping.get(card['corp'])
-    if brand_id is None:
-        brand_id = next_brand_id
-        brand_mapping[card['corp']] = brand_id
-        next_brand_id += 1
-        print(f"새로운 브랜드 등록: {card['corp']} → {brand_id}")
+        if (card['name'], card_type) in db_cards:
+            # 업데이트
+            cursor.execute('''
+                UPDATE card_info
+                SET card_rank = %s, updated_at = %s
+                WHERE card_name = %s AND card_type = %s
+            ''', (idx, now, card['name'], card_type))
+        else:
+            # 삽입
+            cursor.execute('''
+                INSERT INTO card_info (
+                    card_name, card_brand, card_domestic_annual_fee, card_expiry_date,
+                    card_type, card_image_url, card_views, created_at, updated_at,
+                    card_global_annual_fee, card_rank
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                card['name'],
+                brand_id,
+                card['domestic_fee'],
+                None,
+                card_type,
+                card['image_url'],
+                0,
+                now,
+                now,
+                card['international_fee'],
+                idx
+            ))
 
-    if (card['name'], card_type) in db_cards:
-        # 업데이트
-        cursor.execute('''
-            UPDATE card_info
-            SET card_rank = %s, updated_at = %s
-            WHERE card_name = %s AND card_type = %s
-        ''', (idx, now, card['name'], card_type))
-    else:
-        # 삽입
-        cursor.execute('''
-            INSERT INTO card_info (
-                card_name, card_brand, card_domestic_annual_fee, card_expiry_date,
-                card_type, card_image_url, card_views, created_at, updated_at,
-                card_global_annual_fee, card_rank
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (
-            card['name'],
-            brand_id,
-            card['domestic_fee'],
-            None,
-            card_type,
-            card['image_url'],
-            0,
-            now,
-            now,
-            card['international_fee'],
-            idx
-        ))
+    conn.commit()
+    cursor.close()
+    conn.close()
 
-conn.commit()
-cursor.close()
-conn.close()
-
-print("🎉 모든 카드 데이터 DB 업데이트 완료!")
+    print("🎉 모든 카드 데이터 DB 업데이트 완료!")
