@@ -5,15 +5,36 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
 import psycopg2
+import platform
 import os
 from datetime import datetime
 import time
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from brand_mapping import brand_mapping
 
+
 def run_check_cards_crawler():
+
+    # OS 구분
+    system = platform.system()
+    # 크롬드라이버 경로 지정
+    if system == 'Windows':
+        driver_path = os.path.abspath('chromedriver-win/chromedriver.exe')
+        print("Windows용 크롬 드라이버 실행")
+    elif system == 'Darwin':  # macOS
+        driver_path = os.path.abspath('chromedriver-mac/chromedriver')
+        print("Mac용 크롬 드라이버 실행")
+    elif system == 'Linux':
+        driver_path = '/usr/bin/chromedriver'
+        print("Linux용 크롬 드라이버 실행")
+    else:
+        raise Exception(f'Unsupported OS: {system}')
+
     # .env 파일 로드
-    load_dotenv()
+    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+    load_dotenv(dotenv_path=dotenv_path)
 
     # DB 환경변수 가져오기
     DB_HOST = os.getenv('DB_HOST')
@@ -22,8 +43,7 @@ def run_check_cards_crawler():
     DB_USER = os.getenv('DB_USER')
     DB_PASSWORD = os.getenv('DB_PASSWORD')
 
-    # ChromeDriver 경로 설정
-    service = Service(executable_path="C:/02.devEnv/chromedriver-win64/chromedriver.exe")
+    service = Service(executable_path=driver_path)
     driver = webdriver.Chrome(service=service)
 
     # 사이트 접속
@@ -171,3 +191,7 @@ def run_check_cards_crawler():
     conn.close()
 
     print("🎉 모든 카드 데이터 DB 업데이트 완료!")
+
+
+if __name__ == '__main__':
+    run_check_cards_crawler()
