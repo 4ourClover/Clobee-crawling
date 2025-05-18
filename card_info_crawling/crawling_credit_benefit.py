@@ -26,6 +26,8 @@ def transform_stores(stores, brand):
     store_mappings = {
         "대형마트": {
             "KB국민카드": ["이마트", "롯데마트", "홈플러스"],
+        },
+        "마트": {
             "신한카드": ["이마트", "롯데마트", "홈플러스"]
         },
         "대형 할인점": {
@@ -95,18 +97,22 @@ def transform_stores(stores, brand):
     for store in stores:
         replaced = False
         
+        # 더 구체적인(긴) 키워드부터 처리하도록 정렬
+        sorted_keywords = sorted(store_mappings.keys(), key=len, reverse=True)
+
         # 변환 매핑에서 일치하는 키워드가 있는지 확인
-        for keyword, brand_mapping in store_mappings.items():
-            if keyword in store:
+        for keyword in sorted_keywords:
+            # 정확한 일치를 확인하거나 더 정확한 매칭 조건 사용
+            if store.strip() == keyword or (keyword in store and len(keyword) > 3):  # 최소 4글자 이상 키워드만 부분 매칭
                 # 키워드가 발견되면, 브랜드에 맞는 매핑 찾기
-                if brand in brand_mapping:
+                if brand in store_mappings[keyword]:
                     # 브랜드별 매핑이 있으면 추가
-                    transformed_stores.extend(brand_mapping[brand])
+                    transformed_stores.extend(store_mappings[keyword][brand])
                     replaced = True
                     break
-                elif "ALL" in brand_mapping:
+                elif "ALL" in store_mappings[keyword]:
                     # 모든 브랜드에 대한 공통 매핑이 있으면 추가
-                    transformed_stores.extend(brand_mapping["ALL"])
+                    transformed_stores.extend(store_mappings[keyword]["ALL"])
                     replaced = True
                     break
         
