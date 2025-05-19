@@ -1,2 +1,5 @@
 /chromedriver-mac
 /selenium-env
+
+.env
+__pycache__/
