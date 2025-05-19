@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import os, time
 import psycopg2
 import socket
+import platform
 
 from brand_mapping import brand_mapping
 
@@ -41,12 +42,18 @@ def card_events_crawler():
         port=DB_PORT
     )
     cur = conn.cursor()
+    
+    system = platform.system()
 
-    # ChromeDriver 경로 설정
-    if is_local:
-        driver_path = "/Users/iseulgi/Desktop/clobee/Clobee-crawling/chromedriver-mac/chromedriver"
+    # 크롬드라이버 경로 지정
+    if system == 'Windows':
+        driver_path = os.path.abspath('chromedriver-win/chromedriver.exe')
+    elif system == 'Darwin':  # macOS
+        driver_path = os.path.abspath('chromedriver-mac/chromedriver')
+    elif system == 'Linux':
+        driver_path = '/usr/bin/chromedriver'
     else:
-        driver_path = "/usr/bin/chromedriver" # 서버 드라이버
+        raise Exception(f'Unsupported OS: {system}')
 
     service = Service(executable_path=driver_path)
     driver = webdriver.Chrome(service=service)

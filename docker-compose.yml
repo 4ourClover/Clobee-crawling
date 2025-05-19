@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  airflow:
+    build: .
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://clobee:clover1@<운영IP>/clobeeDB
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${DEV__AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__RBAC: "true"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./card_info_crawling:/opt/airflow/card_info_crawling
+      - ./event_info_card:/opt/airflow/event_info_card
+      - ./app.py:/opt/airflow/app.py
+      - ./brand_mapping.py:/opt/airflow/brand_mapping.py
+    ports:
+      - "8080:8080"  # airflow
+      - "8000:8000"  # FastAPI
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username ${AIRFLOW__USER} --password ${AIRFLOW__PW} --firstname admin --lastname user --role Admin --email admin@example.com &&
+        (airflow webserver --port 8080 --workers 1) &&
+        (uvicorn app:app --host 0.0.0.0 --port 8000 --reload)
+      "
+
+volumes:
+  postgres_data:
