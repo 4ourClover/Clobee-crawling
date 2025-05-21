@@ -1,50 +1,76 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
+from airflow.hooks.postgres_hook import PostgresHook
 import psycopg2
 import platform
-import os
+import os, socket
 from datetime import datetime
 import time
-import sys
+import sys, logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from brand_mapping import brand_mapping
 
 
 def run_check_cards_crawler():
-
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    
     # OS 구분
     system = platform.system()
+    options = Options()
+
     # 크롬드라이버 경로 지정
     if system == 'Windows':
         driver_path = os.path.abspath('chromedriver-win/chromedriver.exe')
-        print("Windows용 크롬 드라이버 실행")
     elif system == 'Darwin':  # macOS
         driver_path = os.path.abspath('chromedriver-mac/chromedriver')
-        print("Mac용 크롬 드라이버 실행")
     elif system == 'Linux':
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.binary_location = "/usr/bin/google-chrome"
         driver_path = '/usr/bin/chromedriver'
-        print("Linux용 크롬 드라이버 실행")
     else:
         raise Exception(f'Unsupported OS: {system}')
+    
+    # 로컬 여부 확인
+    is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
 
-    # .env 파일 로드
-    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
-    load_dotenv(dotenv_path=dotenv_path)
+    if is_local:
+        # .env 파일 로드
+        load_dotenv()
 
-    # DB 환경변수 가져오기
-    DB_HOST = os.getenv('DB_HOST')
-    DB_PORT = os.getenv('DB_PORT')
-    DB_NAME = os.getenv('DB_NAME')
-    DB_USER = os.getenv('DB_USER')
-    DB_PASSWORD = os.getenv('DB_PASSWORD')
+        # DB 환경변수 가져오기
+        DB_HOST = os.getenv('DB_HOST')
+        DB_PORT = os.getenv('DB_PORT')
+        DB_NAME = os.getenv('DB_NAME')
+        DB_USER = os.getenv('DB_USER')
+        DB_PASSWORD = os.getenv('DB_PASSWORD')
 
+        # PostgreSQL 연결 설정
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT
+        )
+        cursor = conn.cursor()
+        logging.info("⭕ Local DB Load Done")
+    else:
+        pg_hook = PostgresHook(postgres_conn_id="my_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Prod(connection) DB Load Done")
+    
     service = Service(executable_path=driver_path)
-    driver = webdriver.Chrome(service=service)
+    driver = webdriver.Chrome(service=service, options=options)
 
     # 사이트 접속
     driver.get('https://www.card-gorilla.com/card?cate=CHK')
@@ -113,16 +139,6 @@ def run_check_cards_crawler():
             continue
 
     driver.quit()
-
-    # PostgreSQL 연결
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD
-    )
-    cursor = conn.cursor()
 
     next_brand_id = max(brand_mapping.values()) + 1
 
