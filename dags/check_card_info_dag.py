@@ -2,7 +2,6 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 from crawling_code.crawling_check_cards import run_check_cards_crawler
-from crawling_code.crawling_credit_cards import run_credit_cards_crawler
 
 default_args = {
     'start_date': datetime(2025, 1, 1),

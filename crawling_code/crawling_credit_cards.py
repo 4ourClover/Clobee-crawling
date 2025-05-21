@@ -146,60 +146,63 @@ def run_credit_cards_crawler():
 
     card_type = 401
     
-    # DB에 있는 (card_name, card_type) 가져오기
-    cursor.execute('SELECT card_name, card_type FROM card_info')
-    db_cards = set((row[0], row[1]) for row in cursor.fetchall())
+    try:
+        # DB에 있는 (card_name, card_type) 가져오기
+        cursor.execute('SELECT card_name, card_type FROM card_info')
+        db_cards = set((row[0], row[1]) for row in cursor.fetchall())
 
-    # 크롤링한 (card_name, card_type)
-    new_cards = set((card['name'], card_type) for card in credit_cards)
+        # 크롤링한 (card_name, card_type)
+        new_cards = set((card['name'], card_type) for card in credit_cards)
 
-    # 삭제할 카드 (DB에는 있는데 크롤링한 데이터에는 없는 경우)
-    cards_to_delete = db_cards - new_cards
-    for card_name, card_type_value in cards_to_delete:
-        if card_type_value == card_type:  # 현재 실행 중인 카드 타입(401)만 삭제
-            cursor.execute('DELETE FROM card_info WHERE card_name = %s AND card_type = %s', (card_name, card_type_value))
+        # 삭제할 카드 (DB에는 있는데 크롤링한 데이터에는 없는 경우)
+        cards_to_delete = db_cards - new_cards
+        for card_name, card_type_value in cards_to_delete:
+            if card_type_value == card_type:  # 현재 실행 중인 카드 타입(401)만 삭제
+                cursor.execute('DELETE FROM card_info WHERE card_name = %s AND card_type = %s', (card_name, card_type_value))
 
-    # 카드 삽입/업데이트
-    for idx, card in enumerate(credit_cards, start=1):
-        now = datetime.now()
+        # 카드 삽입/업데이트
+        for idx, card in enumerate(credit_cards, start=1):
+            now = datetime.now()
 
-        # 등록되지 않은 카드 회사 확인 및 등록
-        brand_id = brand_mapping.get(card['corp'])
-        if brand_id is None:
-            brand_id = next_brand_id
-            brand_mapping[card['corp']] = brand_id
-            next_brand_id += 1
-            print(f"새로운 브랜드 등록: {card['corp']} → {brand_id}")
+            # 등록되지 않은 카드 회사 확인 및 등록
+            brand_id = brand_mapping.get(card['corp'])
+            if brand_id is None:
+                brand_id = next_brand_id
+                brand_mapping[card['corp']] = brand_id
+                next_brand_id += 1
+                print(f"새로운 브랜드 등록: {card['corp']} → {brand_id}")
 
-        if (card['name'], card_type) in db_cards:
-            # 업데이트
-            cursor.execute('''
-                UPDATE card_info
-                SET card_rank = %s, updated_at = %s
-                WHERE card_name = %s AND card_type = %s
-            ''', (idx, now, card['name'], card_type))
-        else:
-            # 삽입
-            cursor.execute('''
-                INSERT INTO card_info (
-                    card_name, card_brand, card_domestic_annual_fee, card_expiry_date,
-                    card_type, card_image_url, card_views, created_at, updated_at,
-                    card_global_annual_fee, card_rank
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                card['name'],
-                brand_id,
-                card['domestic_fee'],
-                None,
-                card_type,
-                card['image_url'],
-                0,
-                now,
-                now,
-                card['international_fee'],
-                idx
-            ))
+            if (card['name'], card_type) in db_cards:
+                # 업데이트
+                cursor.execute('''
+                    UPDATE card_info
+                    SET card_rank = %s, updated_at = %s
+                    WHERE card_name = %s AND card_type = %s
+                ''', (idx, now, card['name'], card_type))
+            else:
+                # 삽입
+                cursor.execute('''
+                    INSERT INTO card_info (
+                        card_name, card_brand, card_domestic_annual_fee, card_expiry_date,
+                        card_type, card_image_url, card_views, created_at, updated_at,
+                        card_global_annual_fee, card_rank
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    card['name'],
+                    brand_id,
+                    card['domestic_fee'],
+                    None,
+                    card_type,
+                    card['image_url'],
+                    0,
+                    now,
+                    now,
+                    card['international_fee'],
+                    idx
+                ))
+    except Exception as e:
+        logging.info(f"🔺 일부 데이터 오류 : {e}")
 
     conn.commit()
     cursor.close()
