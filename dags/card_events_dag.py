@@ -11,7 +11,7 @@ default_args = {
 with DAG(
     dag_id="card_events_info_dag",
     default_args=default_args,
-    schedule_interval=None,  # 수동 실행
+    schedule_interval="0 1 * * *", # 매일 오전 1시
     tags=["crawling"],
 ) as dag:
 
