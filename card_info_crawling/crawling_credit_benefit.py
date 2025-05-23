@@ -11,6 +11,7 @@ from datetime import datetime
 import time
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import requests
 
 from brand_mapping import brand_mapping
 
@@ -123,7 +124,7 @@ def transform_stores(stores, brand):
     return transformed_stores
 
 
-def run_credit_cards_crawler():
+def run_credit_cards_benefit_crawler():
     # OS 구분
     system = platform.system()
 
@@ -149,6 +150,8 @@ def run_credit_cards_crawler():
     DB_USER = os.getenv('DB_USER')
     DB_PASSWORD = os.getenv('DB_PASSWORD')
 
+    print("DB",DB_HOST)
+
     service = Service(executable_path=driver_path)
     driver = webdriver.Chrome(service=service)
 
@@ -159,6 +162,20 @@ def run_credit_cards_crawler():
     wait = WebDriverWait(driver, 10)
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list')))
 
+    # 카드 더보기 버튼 계속 누르기
+    while True:
+        try:
+            more_button = driver.find_element(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > div.ftr > a.lst_more')
+            if more_button.is_displayed():
+                driver.execute_script("arguments[0].click();", more_button)
+                time.sleep(1)
+            else:
+                print("--- 모든 카드 로딩 완료 (버튼 안보임) ---")
+                break
+        except:
+            print("--- 모든 카드 로딩 완료 (버튼 없음) ---")
+            break
+
     card_elements = driver.find_elements(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > ul > li')
     num_cards = len(card_elements)
 
@@ -167,7 +184,30 @@ def run_credit_cards_crawler():
     for i in range(1, num_cards + 1):
         try:
             name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
-            
+            params = {"cardName": name}
+            headers = {
+                'Accept': 'application/json;charset=utf-8',
+                'User-Agent': 'Python-requests/2.31.0'
+            }
+
+            try:
+                print(f"API 호출 시작: {name}")
+
+                response = requests.get(
+                    "http://localhost:8080/api/card/getCardId", 
+                    params=params,
+                    headers=headers
+                )
+                print(f"응답 상태: {response.status_code}")
+                print(f"실제 요청 URL: {response.url}")
+
+                response.raise_for_status()  # HTTP 에러 체크
+                card_id = response.json()
+                print(f"카드명: {name} -> 카드ID: {card_id}")
+            except requests.exceptions.RequestException as e:
+                print(f"API 호출 실패: {e}")
+                break
+
             brand = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_corp').text.strip()
 
             # 혜택 조건 정보 가져오기
@@ -179,7 +219,6 @@ def run_credit_cards_crawler():
             benefit_items = driver.find_elements(By.CSS_SELECTOR, 
                 f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.sale > p')
 
-            card_benefits = []
             for j, benefit_item in enumerate(benefit_items, 1):
                 try:
                     # 가맹점 정보
@@ -213,30 +252,122 @@ def run_credit_cards_crawler():
                     benefit_desc = benefit_desc.replace(benefit_percent, '').strip()
                     
                     for store in stores:
-                        card_benefits.append({
+                        #카드 데이터를 리스트에 추가
+                        credit_cards.append({
+                            '카드 id' : card_id,
+                            '카드 이름': name,
                             '가맹점': store,
                             '혜택': benefit_percent,
-                            '혜택 설명': benefit_desc
+                            '혜택 설명': benefit_desc,
+                            '혜택 조건': condition 
                         })
                 
                 except Exception as e:
                     print(f"혜택 항목 {j} 추출 실패: {e}")
                 
-            
-            #카드 데이터를 리스트에 추가
-            credit_cards.append({
-                '카드 이름': name,
-                '혜택 목록': card_benefits,
-                '혜택 조건': condition 
-            })
 
         except Exception as e:
             print(f"{i}번 카드 크롤링 실패: {e}")
             continue
 
-    print(credit_cards)
+    print(f"\n=== 크롤링 완료 ===")
+    print(f"총 {len(credit_cards)}개 혜택 데이터 수집")
 
     driver.quit()
 
+    # ⭐ 중요: 모든 변수를 try 블록 외부에서 초기화
+    conn = None
+    cursor = None
+    saved_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    try:
+        # PostgreSQL 연결
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
+        cursor = conn.cursor()
+
+        print("✅ 데이터베이스 연결 성공")
+
+        cursor.execute("DELETE FROM card_benefit_detail")
+        deleted_count = cursor.rowcount
+        print(f"🗑️ 기존 혜택 데이터 {deleted_count}개 삭제")
+            
+        for i, item in enumerate(credit_cards, 1):
+            try:
+                card_id = item.get('카드 id')
+                card_name = item.get('카드 이름', '').strip()
+                store = item.get('가맹점', '').strip()
+                benefit = item.get('혜택', '').strip()
+                benefit_desc = item.get('혜택 설명', '').strip()
+                condition = item.get('혜택 조건', '').strip()
+                
+                # 필수 데이터 검증
+                if not card_id or not store or not benefit:
+                    print(f"❌ 항목 {i}: 필수 데이터 누락 - 카드ID:{card_id}, 가맹점:{store}, 혜택:{benefit}")
+                    skipped_count += 1
+                    continue
+                
+                # 데이터 삽입
+                cursor.execute("""
+                    INSERT INTO card_benefit_detail (
+                        card_info_id,
+                        card_benefit_store,
+                        card_benefit_discnt_price,
+                        card_benefit_desc,
+                        card_benefit_condition
+                    ) VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    card_id,
+                    store,
+                    benefit,
+                    benefit_desc,
+                    condition
+                ))
+            
+                saved_count += 1
+                
+                # 진행 상황 표시 (100개마다)
+                if i % 100 == 0:
+                    print(f"📊 진행률: {i}/{len(credit_cards)} ({i/len(credit_cards)*100:.1f}%)")
+                
+            except psycopg2.IntegrityError as e:
+                print(f"⚠️ 항목 {i}: 중복 또는 제약조건 위반 - {store}")
+                skipped_count += 1
+                continue
+                
+            except Exception as e:
+                print(f"❌ 항목 {i}: 저장 실패 - {e}")
+                error_count += 1
+                continue
+        
+         # 커밋
+        conn.commit()
+        
+        print(f"\n🎉 저장 완료!")
+        print(f"   - 저장 성공: {saved_count}개")
+        print(f"   - 건너뛴 항목: {skipped_count}개")
+        print(f"   - 오류 발생: {error_count}개")
+        print(f"   - 전체 처리율: {(saved_count/len(credit_cards)*100):.1f}%")
+
+    except Exception as e:
+        print(f"❌ 예상치 못한 오류: {e}")
+        if conn:
+            conn.rollback()
+    
+    finally:
+        # 리소스 정리
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'conn' in locals() and conn:
+            conn.close()
+        print("🔚 데이터베이스 연결 종료")
+
 if __name__ == '__main__':
-    run_credit_cards_crawler()
+    run_credit_cards_benefit_crawler()
