@@ -4,7 +4,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-#from airflow.hooks.postgres_hook import PostgresHook
+from airflow.hooks.postgres_hook import PostgresHook
 from dotenv import load_dotenv
 import psycopg2
 import platform
@@ -114,7 +114,7 @@ def transform_stores(stores, brand):
                     # 모든 브랜드에 대한 공통 매핑이 있으면 추가
                     transformed_stores.extend(store_mappings[keyword]["ALL"])
                     replaced = True
-                    breakv
+                    break
         
         # 변환되지 않은 항목은 그대로 추가
         if not replaced:
@@ -204,7 +204,6 @@ def run_credit_cards_benefit_crawler():
             result = cursor.fetchone()
 
             card_id = result[0]
-            print(card_id)
 
             brand = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_corp').text.strip()
 
