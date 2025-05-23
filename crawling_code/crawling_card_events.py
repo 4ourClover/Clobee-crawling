@@ -6,11 +6,16 @@
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from airflow.hooks.postgres_hook import PostgresHook
 import os, time
 import psycopg2
 import socket
+import platform
+import logging
 
 from brand_mapping import brand_mapping
 
@@ -21,35 +26,53 @@ def card_events_crawler():
 
     # 로컬 여부 확인
     is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
-
-    # .env 파일 로드
-    load_dotenv()
-
-    # DB 환경변수 가져오기
-    DB_HOST = os.getenv('DB_HOST')
-    DB_PORT = os.getenv('DB_PORT')
-    DB_NAME = os.getenv('DB_NAME')
-    DB_USER = os.getenv('DB_USER')
-    DB_PASSWORD = os.getenv('DB_PASSWORD')
-
-    # PostgreSQL 연결 설정
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        port=DB_PORT
-    )
-    cur = conn.cursor()
-
-    # ChromeDriver 경로 설정
+    
     if is_local:
-        driver_path = "/Users/iseulgi/Desktop/clobee/Clobee-crawling/chromedriver-mac/chromedriver"
+        # .env 파일 로드
+        load_dotenv()
+
+        # DB 환경변수 가져오기
+        DB_HOST = os.getenv('DB_HOST')
+        DB_PORT = os.getenv('DB_PORT')
+        DB_NAME = os.getenv('DB_NAME')
+        DB_USER = os.getenv('DB_USER')
+        DB_PASSWORD = os.getenv('DB_PASSWORD')
+
+        # PostgreSQL 연결 설정
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT
+        )
+        cur = conn.cursor()
+        logging.info("⭕ Local DB Load Done")
     else:
-        driver_path = "/usr/bin/chromedriver" # 서버 드라이버
+        pg_hook = PostgresHook(postgres_conn_id="my_pg")
+        conn = pg_hook.get_conn()
+        cur = conn.cursor()
+        logging.info("⭕ Prod(connection) DB Load Done")
+    
+    system = platform.system()
+    options = Options()
+
+    # 크롬드라이버 경로 지정
+    if system == 'Windows':
+        driver_path = os.path.abspath('chromedriver-win/chromedriver.exe')
+    elif system == 'Darwin':  # macOS
+        driver_path = os.path.abspath('chromedriver-mac/chromedriver')
+    elif system == 'Linux':
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.binary_location = "/usr/bin/google-chrome"
+        driver_path = '/usr/bin/chromedriver'
+    else:
+        raise Exception(f'Unsupported OS: {system}')
 
     service = Service(executable_path=driver_path)
-    driver = webdriver.Chrome(service=service)
+    driver = webdriver.Chrome(service=service, options=options)
 
     url = "https://www.card-gorilla.com/benefit"
     driver.get(url)
@@ -99,27 +122,31 @@ def card_events_crawler():
         except Exception as e:
             print(f"{card} 카드 크롤링 실패: {e}")
             continue
+    
+    try:
+        # 이벤트 종료날짜 지난 이벤트 불러오기
+        cur.execute("""
+            SELECT event_info_id FROM event_info
+            WHERE event_status_cd = 702
+                AND event_end_day < CURRENT_DATE
+        """)
 
-    # 이벤트 종료날짜 지난 이벤트 불러오기
-    cur.execute("""
-        SELECT event_info_id FROM event_info
-        WHERE event_status_cd = 702
-            AND event_end_day < CURRENT_DATE
-    """)
+        rows = cur.fetchall()
 
-    rows = cur.fetchall()
-
-    for row in rows:
-        event_info_id = row[0]
-        try:
-            cur.execute("""
-                UPDATE event_info
-                SET event_status_cd = 703
-                WHERE event_info_id = %s
-            """, (event_info_id))
-        except Exception as e:
-            print(f"event_info_id : {event_info_id} 업데이트 실패: {e}")
-            continue
+        for row in rows:
+            event_info_id = row[0]
+            try:
+                cur.execute("""
+                    UPDATE event_info
+                    SET event_status_cd = 703
+                    WHERE event_info_id = %s
+                """, (event_info_id))
+            except Exception as e:
+                print(f"event_info_id : {event_info_id} 업데이트 실패: {e}")
+                continue
+    
+    except Exception as e:
+        logging.info(f"✅ 종료날짜 지난 이벤트 없음.")
 
     # 종료
     cur.close()
