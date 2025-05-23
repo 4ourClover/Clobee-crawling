@@ -5,13 +5,15 @@ from crawling_code.crawling_credit_cards import run_credit_cards_crawler
 
 default_args = {
     'start_date': datetime(2025, 1, 1),
-    'catchup': False
+    'catchup': False,
+    'retries': 0
 }
 
 with DAG(
     dag_id="credit_card_info_dag",
     default_args=default_args,
-    schedule_interval="0 2 * * *", # 매일 오전 2시
+    max_active_runs=1,
+    schedule_interval=None,
     tags=["crawling"],
 ) as dag:
     
