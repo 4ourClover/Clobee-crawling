@@ -13,7 +13,8 @@ with DAG(
     dag_id="credit_card_benefit_dag",
     default_args=default_args,
     max_active_runs=1,
-    schedule_interval=None,
+    schedule_interval="0 2 * * *", # 매일 2:00
+    catchup=False,
     tags=["crawling"],
 ) as dag:
     events_task = PythonOperator(
