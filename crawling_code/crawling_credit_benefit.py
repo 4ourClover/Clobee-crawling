@@ -1,19 +1,18 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from airflow.hooks.postgres_hook import PostgresHook
 from dotenv import load_dotenv
 import psycopg2
 import platform
-import os
-from datetime import datetime
+import os, socket
 import time
-import sys
+import sys, logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import requests
-
-from brand_mapping import brand_mapping
 
 def transform_stores(stores, brand):
     """
@@ -125,8 +124,12 @@ def transform_stores(stores, brand):
 
 
 def run_credit_cards_benefit_crawler():
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    
     # OS 구분
     system = platform.system()
+    options = Options()
 
     # 크롬드라이버 경로 지정
     if system == 'Windows':
@@ -134,29 +137,35 @@ def run_credit_cards_benefit_crawler():
     elif system == 'Darwin':  # macOS
         driver_path = os.path.abspath('chromedriver-mac/chromedriver')
     elif system == 'Linux':
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.binary_location = "/usr/bin/google-chrome"
         driver_path = '/usr/bin/chromedriver'
     else:
         raise Exception(f'Unsupported OS: {system}')
 
-
-    # .env 파일 로드
-    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
-    load_dotenv(dotenv_path=dotenv_path)
-
-    # DB 환경변수 가져오기
-    DB_HOST = os.getenv('DB_HOST')
-    DB_PORT = os.getenv('DB_PORT')
-    DB_NAME = os.getenv('DB_NAME')
-    DB_USER = os.getenv('DB_USER')
-    DB_PASSWORD = os.getenv('DB_PASSWORD')
-
-    print("DB",DB_HOST)
-
     service = Service(executable_path=driver_path)
-    driver = webdriver.Chrome(service=service)
+    driver = webdriver.Chrome(service=service, options=options)
 
     # 사이트 접속
     driver.get('https://www.card-gorilla.com/card?cate=CRD')
+    
+    # 로컬 여부 확인
+    is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
+    
+    if is_local:
+        pg_hook = PostgresHook(postgres_conn_id="dev_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Local DB Load Done")
+    else:
+        pg_hook = PostgresHook(postgres_conn_id="my_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Prod(connection) DB Load Done")
+
+    print("✅ 데이터베이스 연결 성공")
 
     # 명시적 대기
     wait = WebDriverWait(driver, 10)
@@ -215,7 +224,7 @@ def run_credit_cards_benefit_crawler():
                 f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.ex > p.l_mth').text.strip()
             
 
-             # 한 카드에 대한 모든 혜택 항목 가져오기
+            # 한 카드에 대한 모든 혜택 항목 가져오기
             benefit_items = driver.find_elements(By.CSS_SELECTOR, 
                 f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.sale > p')
 
@@ -283,18 +292,6 @@ def run_credit_cards_benefit_crawler():
     error_count = 0
 
     try:
-        # PostgreSQL 연결
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        cursor = conn.cursor()
-
-        print("✅ 데이터베이스 연결 성공")
-
         cursor.execute("DELETE FROM card_benefit_detail")
         deleted_count = cursor.rowcount
         print(f"🗑️ 기존 혜택 데이터 {deleted_count}개 삭제")
@@ -347,7 +344,7 @@ def run_credit_cards_benefit_crawler():
                 error_count += 1
                 continue
         
-         # 커밋
+        # 커밋
         conn.commit()
         
         print(f"\n🎉 저장 완료!")

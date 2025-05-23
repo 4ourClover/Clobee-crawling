@@ -4,8 +4,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from dotenv import load_dotenv
-import psycopg2
 import platform
 from airflow.hooks.postgres_hook import PostgresHook
 import os, socket
@@ -42,24 +40,8 @@ def run_credit_cards_crawler():
     is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
 
     if is_local:
-        # .env 파일 로드
-        load_dotenv()
-
-        # DB 환경변수 가져오기
-        DB_HOST = os.getenv('DB_HOST')
-        DB_PORT = os.getenv('DB_PORT')
-        DB_NAME = os.getenv('DB_NAME')
-        DB_USER = os.getenv('DB_USER')
-        DB_PASSWORD = os.getenv('DB_PASSWORD')
-
-        # PostgreSQL 연결 설정
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            port=DB_PORT
-        )
+        pg_hook = PostgresHook(postgres_conn_id="dev_pg")
+        conn = pg_hook.get_conn()
         cursor = conn.cursor()
         logging.info("⭕ Local DB Load Done")
     else:
