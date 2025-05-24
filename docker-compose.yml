@@ -1,6 +1,6 @@
 services:
   airflow:
-    image: clobee-harbor.shop/library/clobee-crawling-airflow:1.5
+    image: clobee-harbor.shop/library/clobee-crawling-airflow:1.6
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${PROD__AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
