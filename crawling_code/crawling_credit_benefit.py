@@ -192,30 +192,18 @@ def run_credit_cards_benefit_crawler():
     credit_cards = []
     for i in range(1, num_cards + 1):
         try:
-            name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
-            params = {"cardName": name}
-            headers = {
-                'Accept': 'application/json;charset=utf-8',
-                'User-Agent': 'Python-requests/2.31.0'
-            }
+            card_name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
+            
+            # card_id 조회
+            cursor.execute("""
+                SELECT card_info_id
+                FROM card_info
+                WHERE card_name = %s
+                LIMIT 1
+            """, (card_name,))
+            result = cursor.fetchone()
 
-            try:
-                print(f"API 호출 시작: {name}")
-
-                response = requests.get(
-                    "http://localhost:8080/api/card/getCardId", 
-                    params=params,
-                    headers=headers
-                )
-                print(f"응답 상태: {response.status_code}")
-                print(f"실제 요청 URL: {response.url}")
-
-                response.raise_for_status()  # HTTP 에러 체크
-                card_id = response.json()
-                print(f"카드명: {name} -> 카드ID: {card_id}")
-            except requests.exceptions.RequestException as e:
-                print(f"API 호출 실패: {e}")
-                break
+            card_id = result[0]
 
             brand = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_corp').text.strip()
 
@@ -264,7 +252,7 @@ def run_credit_cards_benefit_crawler():
                         #카드 데이터를 리스트에 추가
                         credit_cards.append({
                             '카드 id' : card_id,
-                            '카드 이름': name,
+                            '카드 이름': card_name,
                             '가맹점': store,
                             '혜택': benefit_percent,
                             '혜택 설명': benefit_desc,
@@ -273,7 +261,8 @@ def run_credit_cards_benefit_crawler():
                 
                 except Exception as e:
                     print(f"혜택 항목 {j} 추출 실패: {e}")
-                
+
+            print(credit_cards)  
 
         except Exception as e:
             print(f"{i}번 카드 크롤링 실패: {e}")
