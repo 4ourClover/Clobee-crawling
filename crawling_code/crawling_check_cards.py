@@ -41,6 +41,8 @@ def run_check_cards_crawler():
     
     # 로컬 여부 확인
     is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
+    conn = None
+    cursor = None
 
     if is_local:
         pg_hook = PostgresHook(postgres_conn_id="dev_pg")
