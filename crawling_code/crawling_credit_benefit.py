@@ -76,6 +76,10 @@ def transform_stores(stores, brand):
             "우리카드": ["이마트 에브리데이", "롯데슈퍼", "홈플러스 익스프레스", "GS 수퍼마켓"]
         },
         # 교통과 주유는 이전 요청의 규칙도 추가
+        "대중교통": {
+            # 모든 카드사에 대해 동일한 변환
+            "ALL": ["지하철", "버스 터미널"]
+        },
         "교통": {
             # 모든 카드사에 대해 동일한 변환
             "ALL": ["지하철", "버스 터미널"]
@@ -150,22 +154,6 @@ def run_credit_cards_benefit_crawler():
 
     # 사이트 접속
     driver.get('https://www.card-gorilla.com/card?cate=CRD')
-    
-    # 로컬 여부 확인
-    is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
-    
-    if is_local:
-        pg_hook = PostgresHook(postgres_conn_id="dev_pg")
-        conn = pg_hook.get_conn()
-        cursor = conn.cursor()
-        logging.info("⭕ Local DB Load Done")
-    else:
-        pg_hook = PostgresHook(postgres_conn_id="my_pg")
-        conn = pg_hook.get_conn()
-        cursor = conn.cursor()
-        logging.info("⭕ Prod(connection) DB Load Done")
-
-    print("✅ 데이터베이스 연결 성공")
 
     # 명시적 대기
     wait = WebDriverWait(driver, 10)
@@ -188,12 +176,24 @@ def run_credit_cards_benefit_crawler():
     card_elements = driver.find_elements(By.CSS_SELECTOR, '#q-app > section > div.card > section > div > div.card_list > ul > li')
     num_cards = len(card_elements)
 
+    # 로컬 여부 확인
+    is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
+    
+    if is_local:
+        pg_hook = PostgresHook(postgres_conn_id="dev_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Local DB Load Done")
+    else:
+        pg_hook = PostgresHook(postgres_conn_id="my_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Prod(connection) DB Load Done")
+
     # 카드 데이터 추출
     credit_cards = []
     for i in range(1, num_cards + 1):
         try:
-            
-
             card_name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
             
             # card_id 조회
@@ -264,7 +264,7 @@ def run_credit_cards_benefit_crawler():
                 except Exception as e:
                     print(f"혜택 항목 {j} 추출 실패: {e}")
 
-            print(credit_cards)  
+            #print(credit_cards)  
 
         except Exception as e:
             print(f"{i}번 카드 크롤링 실패: {e}")
