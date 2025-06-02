@@ -192,8 +192,6 @@ def run_credit_cards_benefit_crawler():
     credit_cards = []
     for i in range(1, num_cards + 1):
         try:
-            
-
             card_name = driver.find_element(By.CSS_SELECTOR, f'#q-app > section > div.card > section > div > div.card_list > ul > li:nth-child({i}) > div > div.card_data > div.name > p > span.card_name').text.strip()
             
             # card_id 조회
