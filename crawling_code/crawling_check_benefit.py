@@ -127,7 +127,7 @@ def transform_stores(stores, brand):
     return transformed_stores
 
 
-def run_credit_cards_benefit_crawler():
+def run_check_cards_benefit_crawler():
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     
@@ -177,18 +177,18 @@ def run_credit_cards_benefit_crawler():
     num_cards = len(card_elements)
 
     # 로컬 여부 확인
-    # is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
+    is_local = local_ip.startswith("127.") or local_ip.startswith("192.168.") or local_ip == "localhost"
     
-    # if is_local:
-    #     pg_hook = PostgresHook(postgres_conn_id="dev_pg")
-    #     conn = pg_hook.get_conn()
-    #     cursor = conn.cursor()
-    #     logging.info("⭕ Local DB Load Done")
-    # else:
-    #     pg_hook = PostgresHook(postgres_conn_id="my_pg")
-    #     conn = pg_hook.get_conn()
-    #     cursor = conn.cursor()
-    #     logging.info("⭕ Prod(connection) DB Load Done")
+    if is_local:
+        pg_hook = PostgresHook(postgres_conn_id="dev_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Local DB Load Done")
+    else:
+        pg_hook = PostgresHook(postgres_conn_id="my_pg")
+        conn = pg_hook.get_conn()
+        cursor = conn.cursor()
+        logging.info("⭕ Prod(connection) DB Load Done")
 
     # 카드 데이터 추출
     credit_cards = []
